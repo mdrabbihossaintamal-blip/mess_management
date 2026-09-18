@@ -1,8 +1,5 @@
 name: Build APK
 
-# এই workflow GitHub-এর সার্ভারে (x86-64 Linux) APK বানিয়ে
-# "artifacts" হিসেবে ডাউনলোডের সুযোগ দেয় — ফোনে Flutter লাগে না।
-
 on:
   workflow_dispatch:
   push:
@@ -11,27 +8,36 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Flutter (stable)
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: '3.24.5'
           cache: true
 
-      - name: Inject google-services.json from secret
+      - name: Inject google-services.json
         env:
           GCS_B64: ${{ secrets.GOOGLESERVICES_BASE64 }}
         run: |
           if [ -z "$GCS_B64" ]; then
-            echo "::error::GOOGLESERVICES_BASE64 secret set করুন (google-services.json का base64)"
+            echo "::error::GOOGLESERVICES_BASE64 secret is missing"
             exit 1
           fi
-          echo "$GCS_B64" | base64 -d > android/app/google-services.json
-          ls -la android/app/google-services.json
+
+          printf '%s' "$GCS_B64" | tr -d '[:space:]' | base64 -d > android/app/google-services.json
+
+          if [ ! -s android/app/google-services.json ]; then
+            echo "::error::google-services.json could not be created"
+            exit 1
+          fi
+
+          echo "google-services.json created successfully"
+          ls -lh android/app/google-services.json
 
       - name: Flutter pub get
         run: flutter pub get
@@ -39,12 +45,8 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Build split-per-abi APKs
-        run: flutter build apk --release --split-per-abi
-
-      - name: Upload APKs
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mess-management-apk
-          path: |
-            build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/*.apk
