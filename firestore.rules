@@ -1,0 +1,112 @@
+rules_version = '2';
+
+// ------------------------------------------------------------------
+// Mess Meal Management - Firestore Security Rules
+//
+// Model:
+//   users/{uid}            - profile document keyed by Firebase Auth uid
+//   lookup/{username}      - public identifier->uid mapping (login only)
+//   members/{userId}       - member snapshot (id == user document id)
+//   meals/{id}             - daily meal records
+//   expenses/{id}          - bazar/expense records
+//   payments/{id}          - member payment records
+//   monthlyAccounts/{key}  - month accounting snapshots (YYYY-M)
+//   monthlyMemberAccounts  - per-member frozen month accounts
+//   cashTransactions/{id}  - cash in/out ledger
+//   settings/main          - mess settings
+//   auditLogs/{id}         - admin action audit trail
+//
+// Access summary:
+//   - Nothing may be read/written anonymously (except username lookup).
+//   - Admin = signed-in user whose users/{uid}.role == "admin".
+//   - Members may read only their own meals/payments/profile.
+//   - Members can NEVER write to any financial collection.
+// ------------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function isAdmin() {
+      return signedIn() && userDoc(request.auth.uid).data.role == 'admin';
+    }
+
+    // ================= USERS =================
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ================= LOOKUP (login usernames) =================
+    // Usernames must be resolvable before sign-in. Expose only the
+    // uid/role/name mapping. Full sensitive data remains in /users.
+    match /lookup/{username} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= MEMBERS =================
+    match /members/{memberId} {
+      allow read: if signedIn() && (isAdmin() || request.auth.uid == memberId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= MEALS =================
+    match /meals/{id} {
+      allow read: if signedIn() && (isAdmin() ||
+                  request.auth.uid == resource.data.memberId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= EXPENSES =================
+    match /expenses/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= PAYMENTS =================
+    match /payments/{id} {
+      allow read: if signedIn() && (isAdmin() ||
+                  request.auth.uid == resource.data.memberId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= MONTHLY ACCOUNTS =================
+    match /monthlyAccounts/{key} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= MONTHLY MEMBER ACCOUNTS =================
+    match /monthlyMemberAccounts/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= CASH TRANSACTIONS =================
+    match /cashTransactions/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // ================= SETTINGS =================
+    match /settings/main {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ================= AUDIT LOGS =================
+    match /auditLogs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
