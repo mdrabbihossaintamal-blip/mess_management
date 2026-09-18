@@ -20,24 +20,23 @@ jobs:
           flutter-version: '3.24.5'
           cache: true
 
-      - name: Inject google-services.json
+      - name: Create google-services.json
         env:
-          GCS_B64: ${{ secrets.GOOGLESERVICES_BASE64 }}
+          GCS_JSON: ${{ secrets.GOOGLESERVICES_JSON }}
         run: |
-          if [ -z "$GCS_B64" ]; then
-            echo "::error::GOOGLESERVICES_BASE64 secret is missing"
+          if [ -z "$GCS_JSON" ]; then
+            echo "::error::GOOGLESERVICES_JSON secret is missing"
             exit 1
           fi
 
-          printf '%s' "$GCS_B64" | tr -d '[:space:]' | base64 -d > android/app/google-services.json
+          printf '%s' "$GCS_JSON" > android/app/google-services.json
 
           if [ ! -s android/app/google-services.json ]; then
-            echo "::error::google-services.json could not be created"
+            echo "::error::google-services.json was not created"
             exit 1
           fi
 
           echo "google-services.json created successfully"
-          ls -lh android/app/google-services.json
 
       - name: Flutter pub get
         run: flutter pub get
